@@ -1,49 +1,50 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-PORT=80
+# Kolory dla lepszej czytelności
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
 
-echo "=== Tailscale FULL setup (sudo per command) ==="
+echo -e "${BLUE}>>> Rozpoczynam procedurę wystawiania aplikacji na świat...${NC}"
 
-# Instalacja
-if ! command -v tailscale >/dev/null 2>&1; then
-    echo "Installing Tailscale..."
-    curl -fsSL https://tailscale.com/install.sh | sudo sh
-else
-    echo "Tailscale already installed."
+# 1. Sprawdzenie uprawnień root
+if [ "$EUID" -ne 0 ]; then 
+  echo -e "${RED}[Błąd] Uruchom skrypt z sudo! (sudo ./start-online.sh)${NC}"
+  exit
 fi
 
-# Uruchomienie demona
-if ! systemctl is-active --quiet tailscaled; then
-    echo "Starting tailscaled..."
-    sudo systemctl enable --now tailscaled
+# 2. Sprawdzenie/Instalacja Tailscale
+if ! command -v tailscale &> /dev/null; then
+    echo -e "${BLUE}[1/4] Tailscale nieznaleziony. Instaluję...${NC}"
+    curl -fsSL https://tailscale.com/install.sh | sh
 else
-    echo "tailscaled already running."
+    echo -e "${GREEN}[1/4] Tailscale jest już zainstalowany.${NC}"
 fi
 
-# Logowanie
-if ! tailscale status >/dev/null 2>&1; then
-    echo "Logging in to Tailscale..."
-    sudo tailscale up
+# 3. Uruchomienie usługi Tailscale jeśli nie działa
+sudo systemctl enable --now tailscaled
+
+# 4. Sprawdzenie logowania
+STATUS=$(tailscale status --json | grep -oP '"BackendState":\s*"\K[^"]+')
+if [ "$STATUS" != "Running" ]; then
+    echo -e "${RED}[!] Wymagane logowanie. Kliknij w poniższy link:${NC}"
+    tailscale up --accept-dns=true
 else
-    echo "Already logged in."
+    echo -e "${GREEN}[2/4] Tailscale jest połączony.${NC}"
 fi
 
-# Włączenie Funnel
-if ! tailscale funnel status >/dev/null 2>&1; then
-    echo "Enabling Funnel..."
-    sudo tailscale funnel enable
-else
-    echo "Funnel subsystem already enabled."
-fi
+# 5. Konfiguracja przekierowania portu 80 (Lokalnie)
+echo -e "${BLUE}[3/4] Konfiguruję lokalne serwowanie portu 80...${NC}"
+tailscale serve reset > /dev/null 2>&1
+tailscale serve 80
 
-# Wystawienie portu
-if ! tailscale funnel status 2>/dev/null | grep -q ":$PORT"; then
-    echo "Exposing port $PORT..."
-    sudo tailscale funnel --bg $PORT
-else
-    echo "Port $PORT already exposed."
-fi
+# 6. Włączenie Funnel (Publiczny HTTPS)
+echo -e "${BLUE}[4/4] Otwieram bramę na świat (Funnel)...${NC}"
+tailscale funnel 443 on
 
-echo "=== Setup complete ==="
-tailscale funnel status
+echo -e "\n${GREEN}==============================================${NC}"
+echo -e "${GREEN}SUKCES! Twój system powinien być teraz online.${NC}"
+echo -e "${BLUE}Twój publiczny adres URL to:${NC}"
+tailscale funnel status | grep -oP 'https://[a-z0-9.-]+\.ts\.net' | head -1
+echo -e "${GREEN}==============================================${NC}"

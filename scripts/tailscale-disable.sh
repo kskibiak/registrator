@@ -1,22 +1,23 @@
-#!/usr/bin/env bash
-set -e
+#!/bin/bash
 
-PORT=80
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-if ! command -v tailscale >/dev/null 2>&1; then
-    echo "Tailscale nie jest zainstalowany. Nic do wylaczenia."
-    exit 0
+echo -e "${RED}>>> Zamykam dostęp zewnętrzny...${NC}"
+
+if [ "$EUID" -ne 0 ]; then 
+  echo -e "${RED}[Błąd] Uruchom skrypt z sudo!${NC}"
+  exit
 fi
 
-if ! tailscale funnel status >/dev/null 2>&1; then
-    echo "Funnel nie jest aktywny."
-    exit 0
-fi
+# 1. Wyłączenie Funnel
+tailscale funnel 443 off
+echo -e "${BLUE}[1/2] Brama Funnel zamknięta.${NC}"
 
-if tailscale funnel status 2>/dev/null | grep -q ":$PORT"; then
-    echo "Wylaczanie Funnel na porcie $PORT..."
-    sudo tailscale funnel $PORT off
-    echo "Wylaczono."
-else
-    echo "Funnel na porcie $PORT nie byl wlaczony."
-fi
+# 2. Resetowanie mapowania portów
+tailscale serve reset
+echo -e "${BLUE}[2/2] Mapowanie portów wyczyszczone.${NC}"
+
+echo -e "\n${RED}System jest teraz NIEWIDOCZNY w internecie.${NC}"
+tailscale funnel status
