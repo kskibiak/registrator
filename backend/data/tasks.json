@@ -1,0 +1,16 @@
+[
+  {
+    "id": "bafs1umz",
+    "userId": "02a660h0",
+    "exerciseName": "ZDROWY KRĘGOSŁUP/G",
+    "dayOfWeek": "Czwartek",
+    "time": "20:00",
+    "enabled": true,
+    "createdAt": "2026-02-26T21:33:21.853Z",
+    "status": "failed",
+    "retryCount": 51,
+    "nextTrigger": "2026-03-01T08:01:29.934Z",
+    "lastAttempt": "2026-03-01T08:01:19.042Z",
+    "lastError": "Nie masz karnetu aby zapisać się na to zajęcie!"
+  }
+]

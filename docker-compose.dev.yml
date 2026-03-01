@@ -1,0 +1,27 @@
+# docker-compose.dev.yml — local development without Docker
+# Usage: npm run start  (from root package.json)
+#
+# Alternatively run with Docker but without building frontend:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  backend:
+    build:
+      context: ./backend
+    restart: "no"
+    environment:
+      DB_PATH: /app/data/app.db
+      RESET_DB: "false"
+    volumes:
+      - db-data:/app/data
+    ports:
+      - "3000:3000"
+    networks:
+      - internal
+
+volumes:
+  db-data:
+
+networks:
+  internal:
+    driver: bridge

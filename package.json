@@ -1,0 +1,39 @@
+{
+  "name": "registrator",
+  "version": "1.0.0",
+  "scripts": {
+    "backend:dev":      "cd backend && npx ts-node src/main.ts",
+    "frontend:dev":     "cd frontend && npx ng serve",
+    "dev":              "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
+    "frontend:build":   "cd frontend && npx ng build",
+    "backend:build":    "cd backend && npm run build",
+    "build":            "npm run frontend:build && npm run backend:build",
+
+    "docker:up":        "docker compose up -d",
+    "docker:down":      "docker compose down",
+    "docker:build":     "docker compose build",
+    "docker:logs":      "docker compose logs -f",
+    "docker:reset-db":  "bash scripts/reset-db.sh",
+    "start":            "bash scripts/start.sh",
+    "start:reset-db":   "bash scripts/start.sh --reset-db",
+    "start:logs":       "bash scripts/start.sh --logs",
+
+    "deploy:pi":        "bash scripts/deploy-pi.sh",
+
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.13.5",
+    "dotenv": "^17.3.1",
+    "node-cron": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.2",
+    "concurrently": "^9.2.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

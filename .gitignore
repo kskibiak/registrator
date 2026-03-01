@@ -1,0 +1,47 @@
+# Node modules
+node_modules/
+
+# Build and cache folders
+dist/
+build/
+out/
+.angular/
+
+# Environment variables
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database & Docker volumes
+*.db
+*.sqlite
+*.sqlite3
+backend/data/*.db
+db-data/
+
+# Testing
+coverage/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

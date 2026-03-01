@@ -1,0 +1,35 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      # Path inside the container — matches the mounted volume below
+      DB_PATH: /app/data/app.db
+      # Set RESET_DB=true for a one-time fresh start (clears all data!)
+      RESET_DB: "false"
+    volumes:
+      # Named volume — persists data across rebuilds and restarts
+      - db-data:/app/data
+    networks:
+      - internal
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - internal
+
+volumes:
+  db-data:
+
+networks:
+  internal:
+    driver: bridge
