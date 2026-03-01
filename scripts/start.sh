@@ -4,27 +4,27 @@
 # Kompleksowy skrypt: buduje backend, frontend, obrazy Docker i uruchamia aplikację.
 #
 # Użycie:
-#   ./scripts/start.sh              # build + start
+#   ./scripts/start.sh              # build + start (logi na żywo)
 #   ./scripts/start.sh --reset-db   # build + start + wyczyść bazę danych
 #   ./scripts/start.sh --no-build   # pomiń budowanie obrazów (tylko restart)
-#   ./scripts/start.sh --logs       # po uruchomieniu pokaż logi na żywo
+#   ./scripts/start.sh --detach     # uruchom w tle (bez logów)
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RESET_DB="false"
 NO_BUILD="false"
-SHOW_LOGS="false"
+DETACH="false"
 
-# ── Parsowanie argumentów ──────────────────────────────────
+# ── Parsowanie argumentów ──────────────────────────
 for arg in "$@"; do
   case $arg in
     --reset-db)  RESET_DB="true" ;;
     --no-build)  NO_BUILD="true" ;;
-    --logs)      SHOW_LOGS="true" ;;
+    --detach)    DETACH="true" ;;
     *)
       echo "Nieznany argument: $arg"
-      echo "Użycie: $0 [--reset-db] [--no-build] [--logs]"
+      echo "Użycie: $0 [--reset-db] [--no-build] [--detach]"
       exit 1
       ;;
   esac
@@ -70,19 +70,28 @@ if [[ "$RESET_DB" == "true" ]]; then
   warn "RESET_DB=true — baza danych zostanie wyczyszczona!"
   step "Uruchamianie z czystą bazą..."
   RESET_DB=true docker compose up -d
-  # Poczekaj chwilę, żeby backend zdążył zresetować bazę, potem restartujemy bez flagi
   echo "  Czekam na reset bazy (5s)..."
   sleep 5
   docker compose stop backend
   RESET_DB=false docker compose up -d backend
+  ok "Kontenery uruchomione"
 else
   step "Uruchamianie kontenerów..."
-  RESET_DB=false docker compose up -d
+  if [[ "$DETACH" == "true" ]]; then
+    RESET_DB=false docker compose up -d
+    ok "Kontenery uruchomione"
+  else
+    ok "Kontenery uruchomione — logi poniżej (Ctrl+C aby zatrzymać śledzenie, kontenery nadal działają)"
+    echo ""
+    echo -e "${GREEN}✅  Aplikacja działa na:${NC} http://localhost"
+    echo -e "    Backend API:  http://localhost/api"
+    echo ""
+    RESET_DB=false docker compose up --remove-orphans
+    exit 0
+  fi
 fi
 
-ok "Kontenery uruchomione"
-
-# ── Status ────────────────────────────────────────────────
+# ── Status (tylko dla --detach i --reset-db) ──────────────
 step "Status:"
 docker compose ps
 
@@ -96,8 +105,8 @@ echo -e "  Stop:      docker compose down"
 echo -e "  Reset DB:  $0 --reset-db"
 echo ""
 
-# ── Opcjonalne live logi ───────────────────────────────────
-if [[ "$SHOW_LOGS" == "true" ]]; then
+# Reset-DB case: podepnij się do logów jeśli nie --detach
+if [[ "$RESET_DB" == "true" && "$DETACH" == "false" ]]; then
   step "Logi na żywo (Ctrl+C aby wyjść)..."
   docker compose logs -f
 fi

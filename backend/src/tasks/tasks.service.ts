@@ -22,6 +22,7 @@ export interface TaskDefinition {
   lastError?: string;
   retryCount: number;
   completedAt?: string;
+  registrationOpensAt?: string;
 }
 
 export interface TaskLog {
@@ -68,6 +69,7 @@ export class TasksService implements OnModuleInit {
       lastAttempt: e.lastAttempt ?? undefined,
       lastError: e.lastError ?? undefined,
       completedAt: e.completedAt ?? undefined,
+      registrationOpensAt: e.registrationOpensAt ?? undefined,
     };
   }
 
@@ -78,6 +80,7 @@ export class TasksService implements OnModuleInit {
       lastAttempt: task.lastAttempt ?? null,
       lastError: task.lastError ?? null,
       completedAt: task.completedAt ?? null,
+      registrationOpensAt: task.registrationOpensAt ?? null,
     });
   }
 
@@ -89,6 +92,7 @@ export class TasksService implements OnModuleInit {
         lastAttempt: t.lastAttempt ?? null,
         lastError: t.lastError ?? null,
         completedAt: t.completedAt ?? null,
+        registrationOpensAt: t.registrationOpensAt ?? null,
       })),
     );
   }
@@ -159,7 +163,6 @@ export class TasksService implements OnModuleInit {
     const user = this.usersService.getById(userId);
     if (!user) throw new Error('User not found');
 
-    const retryMs = this.settingsService.getAll().retryIntervalSeconds * 1000;
     const task: TaskDefinition = {
       id: this.generateId(),
       userId,
@@ -170,7 +173,7 @@ export class TasksService implements OnModuleInit {
       createdAt: new Date().toISOString(),
       status: 'active',
       retryCount: 0,
-      nextTrigger: new Date(Date.now() + retryMs).toISOString(),
+      nextTrigger: new Date().toISOString(), // trigger immediately so first check runs within 1s
     };
 
     await this.persistTask(task);
@@ -209,11 +212,21 @@ export class TasksService implements OnModuleInit {
     if (!task) return null;
     task.enabled = !task.enabled;
     if (task.enabled) {
-      task.nextTrigger = new Date().toISOString();
-      if (task.status === 'completed' || task.status === 'failed') {
+      // If nextTrigger already set and still in the future — keep it (don't reset the wait)
+      // Otherwise (past or null) — trigger immediately
+      const triggerMs = task.nextTrigger ? new Date(task.nextTrigger).getTime() : 0;
+      if (triggerMs <= Date.now()) {
+        task.nextTrigger = new Date().toISOString();
+      }
+      if (task.status === 'completed') {
+        // Reactivating a completed task — fresh start
         task.status = 'active';
         task.retryCount = 0;
         task.lastError = undefined;
+        task.completedAt = undefined;
+      } else if (task.status === 'failed') {
+        // Resuming a failed task — keep retryCount so numbering is continuous
+        task.status = 'active';
       }
     }
     await this.persistTask(task);
@@ -379,11 +392,15 @@ export class TasksService implements OnModuleInit {
 
     for (const task of tasks) {
       let earliestSaleFrom: number | null = null;
+      let firstMatchedSaleFrom: number | null = null; // saleFrom of first matching exercise (for display)
       let hadAttempt = false;
 
       for (const [, exercises] of Object.entries(allExercises)) {
         for (const ex of exercises) {
           if (!this.matchesTask(ex, task)) continue;
+
+          // Always record saleFrom of any matching exercise for display purposes
+          if (firstMatchedSaleFrom === null) firstMatchedSaleFrom = ex.saleFrom;
 
           if (ex.assigned) {
             if (task.status !== 'completed') {
@@ -400,7 +417,8 @@ export class TasksService implements OnModuleInit {
           if (currentTime < ex.saleFrom) {
             if (earliestSaleFrom === null || ex.saleFrom < earliestSaleFrom) earliestSaleFrom = ex.saleFrom;
             const opensIn = ex.saleFrom - currentTime;
-            if (opensIn <= 120_000 && opensIn > 0) {
+            // Schedule a precise attempt if we're within 11 minutes (catches the 10-min early wakeup)
+            if (opensIn <= 660_000 && opensIn > 0) {
               this.logger.log(`Registration for "${ex.name}" opens in ${Math.round(opensIn / 1000)}s — scheduling precise attempt`);
               this.scheduleAttempt(token, ex, user.webUserIds, task, ex.saleFrom);
             }
@@ -420,9 +438,39 @@ export class TasksService implements OnModuleInit {
       }
 
       if (task.status !== 'completed') {
-        task.nextTrigger = (!hadAttempt && earliestSaleFrom !== null && currentTime < earliestSaleFrom)
-          ? new Date(earliestSaleFrom).toISOString()
-          : new Date(currentTime + retryMs).toISOString();
+        // Always persist saleFrom for display if we found a matching exercise
+        if (firstMatchedSaleFrom !== null) {
+          task.registrationOpensAt = new Date(firstMatchedSaleFrom).toISOString();
+        }
+
+        if (!hadAttempt && earliestSaleFrom !== null && currentTime < earliestSaleFrom) {
+          // Exercise found — waiting for registration window to open
+          // Wake up 10 minutes early to schedule a precise setTimeout near open time
+          const TEN_MIN_MS = 10 * 60 * 1000;
+          task.nextTrigger = new Date(Math.max(Date.now() + 5000, earliestSaleFrom - TEN_MIN_MS)).toISOString();
+          this.logger.log(`Task "${task.exerciseName}": registration opens at ${task.registrationOpensAt}, waking up at ${task.nextTrigger}`);
+        } else if (!hadAttempt && earliestSaleFrom === null) {
+          // Exercise not yet visible in API — schedule smartly based on class occurrence
+          const nextOccurrence = this.computeNextOccurrence(task);
+          if (nextOccurrence) {
+            const msUntil = nextOccurrence.getTime() - currentTime;
+            const API_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+            if (msUntil > API_WINDOW_MS) {
+              // Class >14 days away — wake up when it enters the API window
+              task.nextTrigger = new Date(nextOccurrence.getTime() - API_WINDOW_MS).toISOString();
+              this.logger.log(`Task "${task.exerciseName}": class >14d away, will recheck at ${task.nextTrigger}`);
+            } else {
+              // Within window but no match — retry in 1h (class name/time mismatch or API lag)
+              task.nextTrigger = new Date(currentTime + Math.max(retryMs, 60 * 60 * 1000)).toISOString();
+              this.logger.warn(`Task "${task.exerciseName}": within API window but no match found — retrying in 1h`);
+            }
+          } else {
+            task.nextTrigger = new Date(currentTime + retryMs).toISOString();
+          }
+        } else {
+          // Attempt was made (success or fail) — standard retry
+          task.nextTrigger = new Date(currentTime + retryMs).toISOString();
+        }
         await this.persistTask(task);
       }
     }
@@ -485,6 +533,46 @@ export class TasksService implements OnModuleInit {
       await this.persistTask(task);
       await this.addLog({ taskId: task.id, exerciseId: exercise.objectId, exerciseName: exercise.name, date: this.formatDate(new Date(exercise.startTime)), status: 'error', message: `Registration exception: ${e.message} (próba #${task.retryCount})`, timestamp: new Date().toISOString(), request: { exerciseId: exercise.objectId, webUserIds }, response: { error: e.message } });
     }
+  }
+
+  /** Maps common Polish and English day-of-week names to JS getDay() index (0=Sun … 6=Sat) */
+  private parseDayOfWeek(dayStr: string): number | null {
+    const lower = dayStr.toLowerCase().trim();
+    const map: Record<string, number> = {
+      'niedziela': 0, 'nd': 0, 'sunday': 0, 'sun': 0,
+      'poniedziałek': 1, 'poniedzialek': 1, 'pon': 1, 'monday': 1, 'mon': 1,
+      'wtorek': 2, 'wt': 2, 'tuesday': 2, 'tue': 2,
+      'środa': 3, 'sroda': 3, 'sr': 3, 'wednesday': 3, 'wed': 3,
+      'czwartek': 4, 'cz': 4, 'thursday': 4, 'thu': 4,
+      'piątek': 5, 'piatek': 5, 'pt': 5, 'friday': 5, 'fri': 5,
+      'sobota': 6, 'sob': 6, 'saturday': 6, 'sat': 6,
+    };
+    // full word match first, then prefix match
+    for (const [key, val] of Object.entries(map)) {
+      if (lower === key || lower.startsWith(key)) return val;
+    }
+    return null;
+  }
+
+  /** Returns the next Date on which a task's class falls (based on dayOfWeek + time) */
+  private computeNextOccurrence(task: TaskDefinition): Date | null {
+    const dayIndex = this.parseDayOfWeek(task.dayOfWeek);
+    if (dayIndex === null) return null;
+    const [hStr, mStr] = task.time.split(':');
+    const hours = parseInt(hStr, 10);
+    const minutes = parseInt(mStr, 10);
+    if (isNaN(hours) || isNaN(minutes)) return null;
+
+    const now = new Date();
+    const candidate = new Date(now);
+    candidate.setHours(hours, minutes, 0, 0);
+
+    const todayIndex = now.getDay();
+    let daysUntil = (dayIndex - todayIndex + 7) % 7;
+    // If today is that day but the time has already passed, go to next week
+    if (daysUntil === 0 && candidate.getTime() <= now.getTime()) daysUntil = 7;
+    candidate.setDate(candidate.getDate() + daysUntil);
+    return candidate;
   }
 
   private formatDate(d: Date): string {

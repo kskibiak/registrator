@@ -1,7 +1,6 @@
 export interface User {
   id: string;
   email: string;
-  password: string;
   webUserIds: string;
   sessionToken?: string;
   tokenValidTo?: string;
@@ -21,6 +20,7 @@ export interface TaskDefinition {
   lastError?: string;
   retryCount: number;
   completedAt?: string;
+  registrationOpensAt?: string;
 }
 
 export interface TaskLog {
@@ -50,7 +50,9 @@ export interface Exercise {
   exerciseGroupName: string;
   assigned: boolean;
   waitList: boolean;
+  waitListPosition: number;
+  waitListCount: number;
+  waitListQuantity: number;
   description: string;
   status: string;
-  day: string;
 }

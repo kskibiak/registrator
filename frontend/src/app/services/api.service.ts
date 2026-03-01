@@ -23,6 +23,10 @@ export class ApiService {
     return this.http.patch<User>(`${API}/users/${id}`, updates);
   }
 
+  resetPassword(id: string, newPassword: string): Observable<User> {
+    return this.http.patch<User>(`${API}/users/${id}/reset-password`, { password: newPassword });
+  }
+
   removeUser(id: string): Observable<any> {
     return this.http.delete(`${API}/users/${id}`);
   }

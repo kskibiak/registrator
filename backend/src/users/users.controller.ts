@@ -1,13 +1,19 @@
 import { Controller, Get, Post, Delete, Patch, Body, Param, HttpException, HttpStatus } from '@nestjs/common';
-import { UsersService } from './users.service';
+import { UsersService, UserConfig } from './users.service';
+
+/** Strip password before sending to client */
+function sanitize(user: UserConfig) {
+  const { password: _pw, ...safe } = user;
+  return safe;
+}
 
 class AddUserDto {
   email: string;
   password: string;
 }
 
-class UpdateUserDto {
-  password?: string;
+class ResetPasswordDto {
+  password: string;
 }
 
 @Controller('api/users')
@@ -16,22 +22,23 @@ export class UsersController {
 
   @Get()
   getAll() {
-    return this.usersService.getAll();
+    return this.usersService.getAll().map(sanitize);
   }
 
   @Post()
   async addUser(@Body() dto: AddUserDto) {
     try {
-      return await this.usersService.addUser(dto.email, dto.password);
+      return sanitize(await this.usersService.addUser(dto.email, dto.password));
     } catch (e) {
       throw new HttpException(e.message, HttpStatus.BAD_REQUEST);
     }
   }
 
-  @Patch(':id')
-  async updateUser(@Param('id') id: string, @Body() dto: UpdateUserDto) {
+  @Patch(':id/reset-password')
+  async resetPassword(@Param('id') id: string, @Body() dto: ResetPasswordDto) {
     try {
-      return await this.usersService.updateUser(id, dto);
+      if (!dto.password) throw new Error('Nowe hasło nie może być puste');
+      return sanitize(await this.usersService.updateUser(id, { password: dto.password }));
     } catch (e) {
       throw new HttpException(e.message, HttpStatus.BAD_REQUEST);
     }
@@ -49,7 +56,8 @@ export class UsersController {
   @Post(':id/refresh-token')
   async refreshToken(@Param('id') id: string) {
     try {
-      return await this.usersService.refreshToken(id);
+      await this.usersService.refreshToken(id);
+      return { success: true };
     } catch (e) {
       throw new HttpException(e.message, HttpStatus.BAD_REQUEST);
     }

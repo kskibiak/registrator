@@ -35,6 +35,7 @@ import { interval, Subscription, forkJoin } from 'rxjs';
             <th>Dzień</th>
             <th>Godzina</th>
             <th>Status</th>
+            <th>Rejestracja od</th>
             <th>Następna próba</th>
             <th>Akcje</th>
           </tr>
@@ -57,11 +58,21 @@ import { interval, Subscription, forkJoin } from 'rxjs';
               <span *ngIf="task.status === 'active' && !task.enabled" class="badge-off">⏸ Wstrzymane</span>
             </td>
             <td>
-              <span *ngIf="task.status === 'completed'" class="text-dim">—</span>
-              <span *ngIf="task.status !== 'completed' && task.nextTrigger" class="next-trigger">
-                {{ task.nextTrigger | date:'dd.MM HH:mm:ss' }}
+              <span *ngIf="task.registrationOpensAt" class="reg-opens-at">
+                {{ task.registrationOpensAt | date:'dd.MM HH:mm' }}
               </span>
-              <span *ngIf="task.status !== 'completed' && !task.nextTrigger" class="text-dim">
+              <span *ngIf="!task.registrationOpensAt" class="text-dim">—</span>
+            </td>
+            <td>
+              <span *ngIf="task.status === 'completed'" class="text-dim">—</span>
+              <span *ngIf="!task.enabled && task.status !== 'completed'" class="text-dim">⏸ Wstrzymane</span>
+              <ng-container *ngIf="task.enabled && task.status !== 'completed' && task.nextTrigger">
+                <span class="next-trigger">{{ task.nextTrigger | date:'dd.MM HH:mm:ss' }}</span>
+                <span class="countdown" [class.countdown-imminent]="getCountdownMs(task.nextTrigger) <= 10000">
+                  {{ countdown(task.nextTrigger) }}
+                </span>
+              </ng-container>
+              <span *ngIf="task.enabled && task.status !== 'completed' && !task.nextTrigger" class="text-dim">
                 Oczekuje...
               </span>
             </td>
@@ -314,6 +325,10 @@ import { interval, Subscription, forkJoin } from 'rxjs';
     .badge-completed { color: #2ecc71; font-weight: bold; font-size: 12px; }
     .badge-failed { color: #e74c3c; font-weight: bold; font-size: 12px; }
     .next-trigger { color: #3498db; font-size: 12px; font-weight: bold; }
+    .countdown { display: block; font-size: 11px; color: #7f8c8d; margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .countdown-imminent { color: #e74c3c; font-weight: bold; animation: pulse 1s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .reg-opens-at { color: #e67e22; font-size: 12px; font-weight: bold; }
     .text-dim { color: #555; font-size: 12px; }
     .text-error { color: #e74c3c; font-size: 12px; }
     .actions-cell { white-space: nowrap; }
@@ -468,6 +483,8 @@ export class TasksComponent implements OnInit, OnDestroy {
   days = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 
   private pollSub?: Subscription;
+  private tickSub?: Subscription;
+  nowMs = Date.now();
 
   constructor(private api: ApiService) {}
 
@@ -475,10 +492,12 @@ export class TasksComponent implements OnInit, OnDestroy {
     this.loadAll();
     this.loadSettings();
     this.pollSub = interval(10_000).subscribe(() => this.loadTasks());
+    this.tickSub = interval(1_000).subscribe(() => (this.nowMs = Date.now()));
   }
 
   ngOnDestroy() {
     this.pollSub?.unsubscribe();
+    this.tickSub?.unsubscribe();
   }
 
   loadAll() {
@@ -492,6 +511,24 @@ export class TasksComponent implements OnInit, OnDestroy {
 
   getUserEmail(userId: string): string {
     return this.users.find((u) => u.id === userId)?.email || userId;
+  }
+
+  getCountdownMs(nextTrigger: string): number {
+    return Math.max(0, new Date(nextTrigger).getTime() - this.nowMs);
+  }
+
+  countdown(nextTrigger: string): string {
+    const ms = this.getCountdownMs(nextTrigger);
+    if (ms <= 0) return '⏳ za chwilę...';
+    const totalSec = Math.ceil(ms / 1000);
+    const d = Math.floor(totalSec / 86400);
+    const h = Math.floor((totalSec % 86400) / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (d > 0) return `za ${d}d ${h}h ${m}m`;
+    if (h > 0) return `za ${h}h ${m}m ${s}s`;
+    if (m > 0) return `za ${m}m ${s}s`;
+    return `za ${s}s`;
   }
 
   toggle(taskId: string) {

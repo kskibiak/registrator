@@ -27,7 +27,6 @@ import { User } from '../../models/models';
         <thead>
           <tr>
             <th>Email</th>
-            <th>Hasło</th>
             <th>webUserIds</th>
             <th>Token ważny do</th>
             <th>Auto-odświeżenie</th>
@@ -37,7 +36,6 @@ import { User } from '../../models/models';
         <tbody>
           <tr *ngFor="let user of users">
             <td>{{ user.email }}</td>
-            <td class="password-cell">{{ user.password }}</td>
             <td>
               <span class="webuser-val">{{ user.webUserIds }}</span>
             </td>
@@ -49,7 +47,7 @@ import { User } from '../../models/models';
               <span *ngIf="!user.tokenValidTo" class="muted">—</span>
             </td>
             <td class="actions-cell">
-              <button class="btn-sm btn-edit" (click)="openEditDialog(user)" title="Edytuj">✏️</button>
+              <button class="btn-sm btn-edit" (click)="openEditDialog(user)" title="Zmień hasło">🔑</button>
               <button class="btn-sm" (click)="refresh(user.id)" title="Odśwież token">🔄</button>
               <button class="btn-sm btn-danger" (click)="remove(user.id)" title="Usuń">🗑</button>
             </td>
@@ -60,22 +58,22 @@ import { User } from '../../models/models';
       <p *ngIf="users.length === 0" class="muted">Brak użytkowników. Dodaj pierwszego powyżej.</p>
     </div>
 
-    <!-- Edit user dialog (password only, webUserIds are auto-managed) -->
+    <!-- Reset password dialog -->
     <div class="overlay" *ngIf="editDialogOpen" (click)="closeEditDialog()">
       <div class="edit-dialog" (click)="$event.stopPropagation()">
         <div class="edit-header">
-          <h3>✏️ Edytuj: {{ editUser?.email }}</h3>
+          <h3>🔑 Zmień hasło: {{ editUser?.email }}</h3>
           <button class="btn-close" (click)="closeEditDialog()">✕</button>
         </div>
         <div class="edit-body">
-          <label>Hasło</label>
-          <input [(ngModel)]="editPassword" type="text" placeholder="Nowe hasło..." />
-          <p class="hint">webUserIds pobierane automatycznie z API po zmianie hasła.</p>
+          <label>Nowe hasło</label>
+          <input [(ngModel)]="editPassword" type="password" placeholder="Nowe hasło..." />
+          <p class="hint">Hasło zostanie użyte przy następnej próbie pobrania tokenu. Nie jest wyświetlane na liście.</p>
           <div *ngIf="editError" class="error" style="margin-top: 8px;">{{ editError }}</div>
         </div>
         <div class="edit-footer">
           <button class="btn-secondary" (click)="closeEditDialog()">Anuluj</button>
-          <button class="btn-primary" (click)="saveEdit()" [disabled]="editSaving">
+          <button class="btn-primary" (click)="saveEdit()" [disabled]="editSaving || !editPassword">
             {{ editSaving ? 'Zapisuję...' : '💾 Zapisz' }}
           </button>
         </div>
@@ -95,7 +93,6 @@ import { User } from '../../models/models';
     .btn-danger { background: #c0392b; }
     .btn-danger:hover { background: #e74c3c; }
     .btn-edit { background: #2c3e50; }
-    .password-cell { font-family: monospace; color: #aaa; font-size: 13px; }
     .webuser-val { font-family: monospace; color: #8be9fd; font-size: 13px; }
     .actions-cell { white-space: nowrap; }
 
@@ -196,7 +193,7 @@ export class UsersComponent implements OnInit {
   openEditDialog(user: User) {
     this.editDialogOpen = true;
     this.editUser = user;
-    this.editPassword = user.password;
+    this.editPassword = '';
     this.editError = '';
   }
 
@@ -206,31 +203,20 @@ export class UsersComponent implements OnInit {
   }
 
   saveEdit() {
-    if (!this.editUser) return;
+    if (!this.editUser || !this.editPassword) return;
     this.editSaving = true;
     this.editError = '';
 
-    const updates: { password?: string } = {};
-    if (this.editPassword !== this.editUser.password) {
-      updates.password = this.editPassword;
-    }
-
-    if (Object.keys(updates).length === 0) {
-      this.editSaving = false;
-      this.closeEditDialog();
-      return;
-    }
-
-    this.api.updateUser(this.editUser.id, updates).subscribe({
+    this.api.resetPassword(this.editUser.id, this.editPassword).subscribe({
       next: () => {
         this.editSaving = false;
         this.closeEditDialog();
-        this.successMsg = 'Użytkownik zaktualizowany.';
+        this.successMsg = 'Hasło zaktualizowane.';
         this.loadUsers();
         setTimeout(() => this.successMsg = '', 3000);
       },
       error: (e) => {
-        this.editError = e.error?.message || 'Błąd zapisywania zmian.';
+        this.editError = e.error?.message || 'Błąd zapisywania hasła.';
         this.editSaving = false;
       },
     });

@@ -8,6 +8,8 @@ services:
       DB_PATH: /app/data/app.db
       # Set RESET_DB=true for a one-time fresh start (clears all data!)
       RESET_DB: "false"
+      # Timezone must match the frontend/user timezone for correct hour matching
+      TZ: "Europe/Warsaw"
     volumes:
       # Named volume — persists data across rebuilds and restarts
       - db-data:/app/data

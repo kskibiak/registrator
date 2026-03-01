@@ -40,4 +40,7 @@ export class TaskEntity {
 
   @Column({ type: 'text', nullable: true })
   completedAt: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  registrationOpensAt: string | null;
 }
