@@ -19,6 +19,8 @@
     "start:logs":       "bash scripts/start.sh --logs",
 
     "deploy:pi":        "bash scripts/deploy-pi.sh",
+  "tailscale:enable": "sudo bash ./scripts/tailscale-enable.sh",
+  "tailscale:disable": "sudo bash ./scripts/tailscale-disable.sh",
 
     "test": "echo \"No tests yet\" && exit 0"
   },
